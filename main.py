@@ -1,3 +1,5 @@
+import threading
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, responses, staticfiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,30 +11,26 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
 import chromadb
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-import torch
+import os
+from dotenv import load_dotenv
+from groq import Groq
 # uvicorn main:app --reload
 
+load_dotenv()
+api_key = os.getenv("GROQ_API_KEY")
+groqClient = Groq(api_key=api_key)
+
+chromaClient = chromadb.Client()
+collection = chromaClient.create_collection(name="collection1")
 app = FastAPI()
-
-client = chromadb.Client()
-collection = client.create_collection(name="collection1")
-
-model_name = "HuggingFaceTB/SmolLM3-3B"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-quantization_config = BitsAndBytesConfig(load_in_4bit=True)
-model = AutoModelForCausalLM.from_pretrained(model_name, 
-                                             dtype = torch.bfloat16,
-                                             quantization_config = quantization_config,
-                                             device_map="auto")
 
 origins = [
     "http://localhost.tiangolo.com",
     "https://localhost.tiangolo.com",
     "http://localhost",
     "http://localhost:8080",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000"
 ]
 
 app.add_middleware(
@@ -61,7 +59,7 @@ def find_reference_page(doc):
             if text == "references":
                 return page_num
     return len(doc)
-    
+
 @app.post("/retrieval")
 async def retrieve(query: Query):
     # use Arxiv API and search using the query
@@ -108,50 +106,38 @@ async def question(query: Query):
     query_texts = [query.msg],
     n_results = 3
     )
-    
 
-    prompt = f""" 
-    User's Question/Response:
-    {query.msg}
+    prompt = f"""
+    ### CONTEXT DOCUMENTS
+    The following segments are retrieved from a research paper. 
+    Use them ONLY if they directly answer the user's query.
 
-    IMPORTANT: ONLY PAY ATTENTION TO THE FOLLOWING SECTIONS IF THEY ARE RELEVANT TO THE USER'S CURRENT QUESTION/RESPONSE
+    1) {results['documents'][0][0]}
+    2) {results['documents'][0][1]}
+    3) {results['documents'][0][2]}
 
-    FOR EXAMPLE, DON'T MAKE THE MISTAKE OF ANSWERING A QUESTION THAT IS ACTUALLY PART OF THE CHAT HISTORY
-    OR OVER ANALYZING PAPER DETAILS WHEN THE USER ISN'T EVEN ASKING A QUESTION.
-    --------------------------------------------------------------------------------------------------
-    1) Details from Paper: 
-
-    {results['documents'][0][0]}
-
-    {results['documents'][0][1]}
-
-    {results['documents'][0][2]}
-
-    --------------------------------------------------------------------------------------------------
-    2) Previous Chat History (ai response followed by the user's response):
-    
+    ### CHAT HISTORY
     {query.prevChat}
+
+    ### TASK
+    You are a research assistant. Answer the user's question using the context above. 
+    - If the context does not contain the answer, ignore the context and answer based on your general knowledge.
+    - Be concise.
+
+    User's Question: {query.msg}
+    Response:
     """
 
-    messages = [
-        {"role": "user", "content": prompt}
-    ]
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False
+    chat_completion = groqClient.chat.completions.create(
+        model="llama-3.3-70b-versatile", 
+
+        messages=[{
+            "role": "user",
+            "content": prompt,
+        }],
+
+        max_tokens=512,        
     )
-    model_inputs = tokenizer([text], return_tensors="pt").to(device)
-    print("Created model inputs...", file=sys.stderr)
 
-    generated_ids = model.generate(**model_inputs, max_new_tokens=512)
-    print("Created input ids...", file=sys.stderr)
-
-    output_ids = generated_ids[0][len(model_inputs.input_ids[0]) :]
-    print("Created output ids...", file=sys.stderr)
-
-    msg = tokenizer.decode(output_ids, skip_special_tokens=True)
-    print(f"Decoded output ids.", file=sys.stderr)
-    query.msg = msg
+    query.msg = chat_completion.choices[0].message.content
     return query
