@@ -22,12 +22,12 @@ const handleQuery = async() => {
         return;
     }
 
-    chatDisplay.appendChild(genChatDiv(userMessage, "user-msg"));
+    chatDisplay.appendChild(genChatDiv(`User: ${userMessage}`, "user-msg"));
     chatDisplay.scrollTo(0, chatDisplay.scrollHeight);
 
     chatInput.value = "";
 
-    const retrievingDiv = genChatDiv(`Retrieving a recent ArXiv paper related to ${userMessage}...`, "ai-msg");
+    const retrievingDiv = genChatDiv(`AI: Retrieving a recent ArXiv paper related to ${userMessage}...`, "ai-msg");
     chatDisplay.appendChild(retrievingDiv);
 
     // Send message to FastAPI
@@ -45,7 +45,7 @@ const handleQuery = async() => {
     
     if (response) {
         const data = await response.json();
-        retrievingDiv.querySelector('p').textContent = `Retrieved the paper ${data.msg}. What is your question regarding the paper?`
+        retrievingDiv.querySelector('p').textContent = `AI: Retrieved the paper ${data.msg}. What is your question regarding the paper?`
         firstClick = false;
     }
 }
@@ -57,7 +57,7 @@ const handleQuestion = async() => {
         return;
     }
 
-    chatDisplay.appendChild(genChatDiv(userMessage, "user-msg"));
+    chatDisplay.appendChild(genChatDiv(`User: ${userMessage}`, "user-msg"));
     chatDisplay.scrollTo(0, chatDisplay.scrollHeight);
     chatInput.value = "";
     const chatHistory = chatDisplay.innerText;
@@ -81,7 +81,7 @@ const handleQuestion = async() => {
 
     if (response) {
         const data = await response.json();
-        thinkingDiv.querySelector('p').textContent = data.msg;
+        thinkingDiv.querySelector('p').textContent = `AI: ${data.msg}`;
     }
 }
 
