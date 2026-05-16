@@ -8,4 +8,4 @@ Groq's LLM API is utilized to answer the questions based on either relevant sect
 
 The state-driven workflow is implemeted with LangGraph.
 
-<img width="750" height="500" alt="graph" src="https://github.com/user-attachments/assets/248eca1c-efd8-4f93-a971-34b289ebcb18" />
+<img width="750" height="500" alt="graph" src="https://github.com/user-attachments/assets/06e8d657-65d7-4649-80cc-5b40fe3830ab" />
