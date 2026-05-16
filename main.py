@@ -117,6 +117,7 @@ class GraphState(TypedDict):
     decision: str
     prompt: str
     response: str
+    relevance: str
     history: str
 
 def get_llm_response(state: GraphState):
@@ -209,6 +210,66 @@ def tavily_web_search(state: GraphState):
     state["source"] = "Tavily web search"
     return state
 
+def build_web_query(state: GraphState):
+    print("----- Building Web Query ----------------")
+    print(f"------ OLD QUERY: {state["query"]} --------")
+
+    action_prompt = f"""
+    You are an expert query builder. Analyze the user's current query and enhance it to maximize the relevance and accuracy of results from Tavily Web Search.
+
+    Here is the chat history, only utilize it if it can help you create a better search query.
+
+    ### CHAT HISTORY
+    [START CHAT HISTORY]
+    {state["history"]}
+    [END CHAT HISTORY]
+
+    Strict Output Rules:
+    1. Output exactly one enhanced search query.
+    2. Do not include any introductory or concluding text.
+    3. Do not wrap the query in quotes, markdown code blocks, or explanations.
+    4. Output only the raw query string.
+
+    User's Current Query:
+    {state["query"]}
+    """
+
+    state["prompt"] = action_prompt
+    state = get_llm_response(state)
+    new_query = state["response"].strip()
+
+    print(f"----------- NEW QUERY: {new_query}--------------------")
+    state["query"] = new_query
+    return state
+
+def check_relevance(state: GraphState):
+    print("--------- CHECKING RELEVANCE -----------------------------")
+
+    decision_prompt = f"""
+    You are a relevance analyzer. Check the context below to see if the context is relevant to the user's question or not.
+
+    ###
+    Context:
+    {state["context"]}
+    ###
+
+    User's question: {state["query"]}
+
+    Options:
+    - yes: if the context is relevant and the question can be answered using it.
+    - no: if the context is not relevant and the question can not be answered using it.
+    
+    Please answer with only 'yes' or 'no'.
+    """
+
+    state["prompt"] = decision_prompt
+    state = get_llm_response(state)
+    rel_decision = state["response"].strip().strip("'").lower()
+
+    print(f"----------- RELEVANT? {rel_decision}--------------------")
+    state["relevance"] = rel_decision
+    return state
+
 def router(state: GraphState) -> Literal["arxiv_paper", "web_search", "internal"]:
     print("---------- ROUTING ------------------")
     decision_prompt = f"""
@@ -221,12 +282,12 @@ def router(state: GraphState) -> Literal["arxiv_paper", "web_search", "internal"
     
     USER'S QUERY: {state["query"]}
 
-    Be concise, your response should simply be one of these three categories: arxiv_paper, web_search, or internal.
+    Please answer with only 'arxiv_paper', 'web_search', or 'internal'.
     """
 
     state["prompt"] = decision_prompt
     state = get_llm_response(state)
-    router_decision = state["response"].strip().lower()
+    router_decision = state["response"].strip().strip("'").lower()
 
     print(f"-----------ROUTER DECISION: {router_decision}--------------------")
     state["decision"] = router_decision
@@ -235,12 +296,17 @@ def router(state: GraphState) -> Literal["arxiv_paper", "web_search", "internal"
 def route_decision(state) -> str:
     return state["decision"]
 
+def rel_decision(state) -> str:
+    return state["relevance"]
+
 workflow = StateGraph(GraphState)
 
 workflow.add_node("Generate", get_llm_response)
 workflow.add_node("Build_Wcon", build_prompt_wcon)
 workflow.add_node("Build_Ncon", build_prompt_ncon)
 workflow.add_node("Retrieve_Context", retrieve_context)
+workflow.add_node("Check_Relevance", check_relevance)
+workflow.add_node("Build_Query", build_web_query)
 workflow.add_node("Web_Search", tavily_web_search)
 workflow.add_node("Router", router)
 
@@ -254,8 +320,17 @@ workflow.add_conditional_edges(
         "internal": "Build_Ncon",
     }
 )
+
+workflow.add_edge("Retrieve_Context", "Check_Relevance")
+workflow.add_conditional_edges(
+    "Check_Relevance",
+    rel_decision, {
+        "yes": "Build_Wcon",
+        "no": "Build_Query"
+    }
+)
+workflow.add_edge("Build_Query", "Web_Search")
 workflow.add_edge("Web_Search", "Build_Wcon")
-workflow.add_edge("Retrieve_Context", "Build_Wcon")
 workflow.add_edge("Build_Wcon", "Generate")
 workflow.add_edge("Build_Ncon", "Generate")
 workflow.add_edge("Generate", END)
