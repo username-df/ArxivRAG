@@ -139,6 +139,9 @@ def get_llm_response(state: GraphState):
 
 def build_prompt_wcon(state: GraphState):
     print("----------- BUILDING PROMPT W/ CONTEXT -------------------------------")
+    print("\nContext:\n")
+    print(state["context"])
+
     prompt = f"""
     ### TASK
     You are a research assistant. Answer the user's question using the context above. 
@@ -213,7 +216,7 @@ def router(state: GraphState) -> Literal["arxiv_paper", "web_search", "internal"
 
     Options:
     - internal: If it's a question that can be answer with your own internal/general knowledge.
-    - arxiv_paper: if it's a question that the context from the retrieved ArXiv research paper can answer (see "CONTEXT" section below to check if the context is relevant to the user's query or not).
+    - arxiv_paper: if it's a question that the context from the retrieved ArXiv research paper can answer
     - web_search: If it's about external data (recent news, brand names, etc.) that can not be answered by the paper context or your own general/internal knowledge.
     
     USER'S QUERY: {state["query"]}
