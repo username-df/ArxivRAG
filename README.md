@@ -7,5 +7,3 @@ LangChain's text splitter and ChromaDB are used to create and semantically searc
 Groq's LLM API is utilized to answer the questions based on either relevant sections of the paper using RAG, Web Search done with Tavily API, or the LLM's internal knowledge.
 
 The state-driven workflow is implemeted with LangGraph.
-
-<img width="750" height="500" alt="graph" src="https://github.com/user-attachments/assets/15f1af05-f1cc-412c-9de5-980f86890296" />
