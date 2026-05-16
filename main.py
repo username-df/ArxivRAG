@@ -117,7 +117,7 @@ class GraphState(TypedDict):
     decision: str
     prompt: str
     response: str
-    relevance: str
+    relevant: str
     history: str
 
 def get_llm_response(state: GraphState):
@@ -142,7 +142,8 @@ def build_prompt_wcon(state: GraphState):
     print("----------- BUILDING PROMPT W/ CONTEXT -------------------------------")
     print("\nContext:\n")
     print(state["context"])
-
+    print(f"From: {state["source"]}")
+    
     prompt = f"""
     ### TASK
     You are a research assistant. Answer the user's question using the context above. 
@@ -172,12 +173,14 @@ def build_prompt_wcon(state: GraphState):
 def build_prompt_ncon(state: GraphState):
     print("---------- BUILDING PROMPT W/ NO CONTEXT ---------------------------------")
     prompt = f"""
-    ### CHAT HISTORY
-    {state["history"]}
-
     ### TASK
     You are a research assistant. Answer the user's question using your internal/general knowledge. 
     - Be concise.
+
+    ### CHAT HISTORY
+    [START CHAT HISTORY]
+    {state["history"]}
+    [END CHAT HISTORY]
 
     User's Question: {state["query"]}
     Response:
@@ -245,6 +248,9 @@ def build_web_query(state: GraphState):
 def check_relevance(state: GraphState):
     print("--------- CHECKING RELEVANCE -----------------------------")
 
+    if state["source"] == "Tavily web search":
+        print(f"--------- CONTEXT: {state["context"]} ---------------")
+
     decision_prompt = f"""
     You are a relevance analyzer. Check the context below to see if the context is relevant to the user's question or not.
 
@@ -267,7 +273,7 @@ def check_relevance(state: GraphState):
     rel_decision = state["response"].strip().strip("'").lower()
 
     print(f"----------- RELEVANT? {rel_decision}--------------------")
-    state["relevance"] = rel_decision
+    state["relevant"] = rel_decision
     return state
 
 def router(state: GraphState) -> Literal["arxiv_paper", "web_search", "internal"]:
@@ -297,7 +303,13 @@ def route_decision(state) -> str:
     return state["decision"]
 
 def rel_decision(state) -> str:
-    return state["relevance"]
+    if state["relevant"] == "yes":
+        return "use_context"
+    
+    if state["source"] == "ArXiv research paper":
+        return "try_web_search"
+    
+    return "fallback"
 
 workflow = StateGraph(GraphState)
 
@@ -322,15 +334,16 @@ workflow.add_conditional_edges(
 )
 
 workflow.add_edge("Retrieve_Context", "Check_Relevance")
+workflow.add_edge("Web_Search", "Check_Relevance")
 workflow.add_conditional_edges(
     "Check_Relevance",
     rel_decision, {
-        "yes": "Build_Wcon",
-        "no": "Build_Query"
+        "use_context": "Build_Wcon",
+        "try_web_search": "Build_Query",
+        "fallback": "Build_Ncon"
     }
 )
 workflow.add_edge("Build_Query", "Web_Search")
-workflow.add_edge("Web_Search", "Build_Wcon")
 workflow.add_edge("Build_Wcon", "Generate")
 workflow.add_edge("Build_Ncon", "Generate")
 workflow.add_edge("Generate", END)
